@@ -541,21 +541,30 @@ function AuthPanel({
     setMessage("");
     setIsSubmitting(true);
 
-    const result =
-      mode === "sign-in"
-        ? await supabase.auth.signInWithPassword({ email, password })
-        : await supabase.auth.signUp({ email, password });
+    try {
+      const result =
+        mode === "sign-in"
+          ? await supabase.auth.signInWithPassword({ email, password })
+          : await supabase.auth.signUp({ email, password });
 
-    setIsSubmitting(false);
+      setIsSubmitting(false);
 
-    if (result.error) {
-      setMessage(result.error.message);
-      return;
-    }
+      if (result.error) {
+        setMessage(result.error.message);
+        return;
+      }
 
-    onAuthChange(result.data.session);
-    if (mode === "sign-up") {
-      setMessage(t.authSuccess);
+      onAuthChange(result.data.session);
+      if (mode === "sign-up") {
+        setMessage(t.authSuccess);
+      }
+    } catch {
+      setIsSubmitting(false);
+      setMessage(
+        locale === "tr"
+          ? "Supabase bağlantısı kurulamadı. İnternetini veya proje ayarlarını kontrol et."
+          : "Could not connect to Supabase. Check your connection or project settings.",
+      );
     }
   }
 
@@ -847,18 +856,38 @@ export default function Home() {
       return;
     }
 
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setAuthReady(true);
-    });
+    const authClient = supabase;
+    let isMounted = true;
+
+    async function loadSession() {
+      try {
+        const { data } = await authClient.auth.getSession();
+        if (isMounted) {
+          setSession(data.session);
+        }
+      } catch {
+        if (isMounted) {
+          setSession(null);
+        }
+      } finally {
+        if (isMounted) {
+          setAuthReady(true);
+        }
+      }
+    }
+
+    void loadSession();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = authClient.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, [supabase]);
 
   useEffect(() => {
@@ -1085,7 +1114,11 @@ export default function Home() {
   async function signOut() {
     if (!supabase) return;
 
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // Keep the local UI responsive even if Supabase is temporarily unreachable.
+    }
     setSession(null);
   }
 
