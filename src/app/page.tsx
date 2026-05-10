@@ -25,11 +25,13 @@ import {
 import type { Session } from "@supabase/supabase-js";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { loadWorkspace, saveWorkspace } from "@/lib/supabase/workspace";
 
 type Locale = "tr" | "en";
 type Theme = "light" | "dark";
 type ActiveView = "notes" | "templates";
 type BlockType = "paragraph" | "heading" | "todo" | "list";
+type SyncStatus = "error" | "loading" | "local" | "saved" | "saving";
 type TemplateId =
   | "emptyPage"
   | "emptyDatabase"
@@ -60,6 +62,9 @@ type Translation = {
   newPage: string;
   searchPlaceholder: string;
   saved: string;
+  saving: string;
+  syncError: string;
+  localOnly: string;
   newNotePlaceholder: string;
   emptyTitle: string;
   emptyBody: string;
@@ -104,6 +109,9 @@ const translations: Record<Locale, Translation> = {
     newPage: "Yeni sayfa",
     searchPlaceholder: "Sayfalarda ara",
     saved: "Kaydedildi",
+    saving: "Kaydediliyor",
+    syncError: "Yerel kayıt",
+    localOnly: "Yerel mod",
     newNotePlaceholder: "Yeni not",
     emptyTitle: "Henüz not yok",
     emptyBody: "Yeni bir sayfa oluşturup boş bir notla başlayabilirsin.",
@@ -163,6 +171,9 @@ const translations: Record<Locale, Translation> = {
     newPage: "New page",
     searchPlaceholder: "Search pages",
     saved: "Saved",
+    saving: "Saving",
+    syncError: "Saved locally",
+    localOnly: "Local mode",
     newNotePlaceholder: "New note",
     emptyTitle: "No notes yet",
     emptyBody: "Create a new page and start with a blank note.",
@@ -768,6 +779,14 @@ function displayEmoji(emoji: string) {
   return emoji === "○" ? "" : emoji;
 }
 
+function createWorkspaceSnapshot(
+  pages: NotePage[],
+  locale: Locale,
+  theme: Theme,
+) {
+  return JSON.stringify({ locale, pages, theme });
+}
+
 function resizeTextarea(element: HTMLTextAreaElement) {
   const lineHeight = Number.parseFloat(getComputedStyle(element).lineHeight);
   const verticalPadding =
@@ -793,12 +812,26 @@ export default function Home() {
   const [locale, setLocale] = useState<Locale>("tr");
   const [theme, setTheme] = useState<Theme>("light");
   const [session, setSession] = useState<Session | null>(null);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(
+    supabase ? "loading" : "local",
+  );
   const [authReady, setAuthReady] = useState(() => !supabase);
   const [query, setQuery] = useState("");
   const cleanupReadyRef = useRef(false);
+  const remoteReadyRef = useRef(false);
+  const saveTimerRef = useRef<number | null>(null);
+  const lastRemoteSnapshotRef = useRef("");
   const storageReadyRef = useRef(false);
 
   const t = translations[locale];
+  const syncLabel =
+    syncStatus === "saving"
+      ? t.saving
+      : syncStatus === "error"
+        ? t.syncError
+        : syncStatus === "local"
+          ? t.localOnly
+          : t.saved;
 
   useEffect(() => {
     window.setTimeout(() => {
@@ -868,6 +901,7 @@ export default function Home() {
       } catch {
         if (isMounted) {
           setSession(null);
+          setSyncStatus("local");
         }
       } finally {
         if (isMounted) {
@@ -881,7 +915,10 @@ export default function Home() {
     const {
       data: { subscription },
     } = authClient.auth.onAuthStateChange((_event, nextSession) => {
+      remoteReadyRef.current = false;
+      lastRemoteSnapshotRef.current = "";
       setSession(nextSession);
+      setSyncStatus(nextSession ? "loading" : "local");
     });
 
     return () => {
@@ -891,12 +928,109 @@ export default function Home() {
   }, [supabase]);
 
   useEffect(() => {
+    if (!supabase || !session || !storageReadyRef.current || remoteReadyRef.current) {
+      return;
+    }
+
+    const syncClient = supabase;
+    const userId = session.user.id;
+    let isMounted = true;
+    setSyncStatus("loading");
+
+    async function syncInitialWorkspace() {
+      try {
+        const remoteWorkspace = await loadWorkspace<NotePage>(
+          syncClient,
+          userId,
+        );
+
+        if (!isMounted) {
+          return;
+        }
+
+        if (remoteWorkspace?.pages?.length) {
+          const remotePages = remoteWorkspace.pages.map(
+            removeGeneratedTemplateBlocks,
+          );
+          setPages(remotePages);
+          setActivePageId(remotePages[0]?.id ?? "");
+          setLocale(remoteWorkspace.locale);
+          setTheme(remoteWorkspace.theme);
+          lastRemoteSnapshotRef.current = createWorkspaceSnapshot(
+            remotePages,
+            remoteWorkspace.locale,
+            remoteWorkspace.theme,
+          );
+        } else {
+          await saveWorkspace(syncClient, userId, {
+            locale,
+            pages,
+            theme,
+          });
+          lastRemoteSnapshotRef.current = createWorkspaceSnapshot(
+            pages,
+            locale,
+            theme,
+          );
+        }
+
+        remoteReadyRef.current = true;
+        setSyncStatus("saved");
+      } catch {
+        remoteReadyRef.current = false;
+        setSyncStatus("error");
+      }
+    }
+
+    void syncInitialWorkspace();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [locale, pages, session, supabase, theme]);
+
+  useEffect(() => {
     if (storageReadyRef.current) {
       window.localStorage.setItem("notion-lite-pages", JSON.stringify(pages));
       window.localStorage.setItem("notion-lite-locale", locale);
       window.localStorage.setItem("notion-lite-theme", theme);
     }
   }, [locale, pages, theme]);
+
+  useEffect(() => {
+    if (!supabase || !session || !remoteReadyRef.current) {
+      return;
+    }
+
+    const syncClient = supabase;
+    const userId = session.user.id;
+    const snapshot = createWorkspaceSnapshot(pages, locale, theme);
+    if (snapshot === lastRemoteSnapshotRef.current) {
+      return;
+    }
+
+    if (saveTimerRef.current) {
+      window.clearTimeout(saveTimerRef.current);
+    }
+
+    setSyncStatus("saving");
+    saveTimerRef.current = window.setTimeout(() => {
+      saveWorkspace(syncClient, userId, { locale, pages, theme })
+        .then(() => {
+          lastRemoteSnapshotRef.current = snapshot;
+          setSyncStatus("saved");
+        })
+        .catch(() => {
+          setSyncStatus("error");
+        });
+    }, 700);
+
+    return () => {
+      if (saveTimerRef.current) {
+        window.clearTimeout(saveTimerRef.current);
+      }
+    };
+  }, [locale, pages, session, supabase, theme]);
 
   useEffect(() => {
     function closeMenusWithEscape(event: KeyboardEvent) {
@@ -1335,8 +1469,12 @@ export default function Home() {
           <section className="light-tree-surface flex min-w-0 flex-col bg-[#fbfefd]">
             <header className="relative z-10 flex items-center border-b border-[#dce8e4] px-5 py-3">
               <div className="flex items-center gap-2 text-sm text-[#687874]">
-                <Circle size={10} fill="#14a37f" strokeWidth={0} />
-                {t.saved}
+                <Circle
+                  size={10}
+                  fill={syncStatus === "error" ? "#d89a2b" : "#14a37f"}
+                  strokeWidth={0}
+                />
+                {syncLabel}
               </div>
             </header>
 
