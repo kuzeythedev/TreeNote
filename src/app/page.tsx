@@ -1,7 +1,8 @@
 "use client";
 
 import {
-  Bot,
+  BookOpen,
+  CalendarCheck,
   CheckSquare,
   ClipboardList,
   Circle,
@@ -19,7 +20,10 @@ import {
   Search,
   Settings,
   Table2,
+  Target,
   Trash2,
+  Utensils,
+  WalletCards,
   UserRound,
 } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
@@ -30,16 +34,22 @@ import { loadWorkspace, saveWorkspace } from "@/lib/supabase/workspace";
 type Locale = "tr" | "en";
 type Theme = "light" | "dark";
 type ActiveView = "notes" | "templates";
-type BlockType = "paragraph" | "heading" | "todo" | "list";
+type BlockType = "paragraph" | "heading" | "todo" | "list" | "table";
 type SyncStatus = "error" | "loading" | "local" | "saved" | "saving";
 type TemplateId =
   | "emptyPage"
   | "emptyDatabase"
-  | "buildWithAi"
   | "tasks"
   | "projects"
   | "docs"
-  | "brainstorm";
+  | "brainstorm"
+  | "diet"
+  | "goals"
+  | "habits"
+  | "finance"
+  | "study";
+
+type TemplateAccent = "blue" | "green" | "orange" | "purple" | "red" | "teal" | "yellow";
 
 type NoteBlock = {
   id: string;
@@ -82,6 +92,7 @@ type Translation = {
   addBlock: string;
   addBlockEnd: string;
   deleteBlock: string;
+  addTableRow: string;
   toggleBlock: string;
   blockPlaceholder: Record<BlockType, string>;
   blockLabel: Record<BlockType, string>;
@@ -105,7 +116,7 @@ type Translation = {
 
 const translations: Record<Locale, Translation> = {
   tr: {
-    appSubtitle: "Web MVP",
+    appSubtitle: "Düşüncelerini dallandır",
     newPage: "Yeni sayfa",
     searchPlaceholder: "Sayfalarda ara",
     saved: "Kaydedildi",
@@ -129,24 +140,28 @@ const translations: Record<Locale, Translation> = {
     addBlock: "Yazmaya başla",
     addBlockEnd: "Sayfa sonuna blok ekle",
     deleteBlock: "Bloğu sil",
+    addTableRow: "Satır ekle",
     toggleBlock: "Blok durumunu değiştir",
     blockPlaceholder: {
       paragraph: "Bir şeyler yaz",
       heading: "Başlık yaz",
       todo: "Yapılacak iş",
       list: "Yeni madde",
+      table: "Tablo hücresi",
     },
     blockLabel: {
       paragraph: "Metin",
       heading: "Başlık",
       todo: "Todo",
       list: "Liste",
+      table: "Tablo",
     },
     blockDescription: {
       paragraph: "Düz metin bloğu",
       heading: "Büyük bölüm başlığı",
       todo: "İşaretlenebilir görev",
       list: "Sırasız madde",
+      table: "Satır ve kolonlarla planla",
     },
     authTitle: "Notlarına giriş yap",
     authBody: "Supabase hesabınla giriş yap veya yeni bir hesap oluştur.",
@@ -167,7 +182,7 @@ const translations: Record<Locale, Translation> = {
       "Kayıt isteği gönderildi. Supabase e-posta doğrulaması açıksa gelen kutunu kontrol et.",
   },
   en: {
-    appSubtitle: "Web MVP",
+    appSubtitle: "Branch out your thoughts",
     newPage: "New page",
     searchPlaceholder: "Search pages",
     saved: "Saved",
@@ -191,24 +206,28 @@ const translations: Record<Locale, Translation> = {
     addBlock: "Start writing",
     addBlockEnd: "Add block to end of page",
     deleteBlock: "Delete block",
+    addTableRow: "Add row",
     toggleBlock: "Toggle block state",
     blockPlaceholder: {
       paragraph: "Write something",
       heading: "Write a heading",
       todo: "Task to do",
       list: "New item",
+      table: "Table cell",
     },
     blockLabel: {
       paragraph: "Text",
       heading: "Heading",
       todo: "Todo",
       list: "List",
+      table: "Table",
     },
     blockDescription: {
       paragraph: "Plain text block",
       heading: "Large section heading",
       todo: "Checkable task",
       list: "Unordered item",
+      table: "Plan with rows and columns",
     },
     authTitle: "Sign in to your notes",
     authBody: "Use your Supabase account or create a new one.",
@@ -238,6 +257,7 @@ const blockIcons: Record<
   heading: Heading1,
   todo: CheckSquare,
   list: List,
+  table: Table2,
 };
 
 const starterPages: NotePage[] = [
@@ -310,7 +330,7 @@ const templateCopy: Record<
     suggested: string;
     quick: Array<{ id: TemplateId; title: string }>;
     suggestedItems: Array<{
-      accent: string;
+      accent: TemplateAccent;
       description: string;
       id: TemplateId;
       preview: string[];
@@ -325,7 +345,6 @@ const templateCopy: Record<
     quick: [
       { id: "emptyPage", title: "Boş sayfa" },
       { id: "emptyDatabase", title: "Boş tablo" },
-      { id: "buildWithAi", title: "AI ile oluştur" },
     ],
     suggestedItems: [
       {
@@ -356,6 +375,41 @@ const templateCopy: Record<
         preview: ["Fikir", "Kişi", "Öncelik"],
         title: "Beyin Fırtınası",
       },
+      {
+        accent: "teal",
+        description: "Öğün, su ve hedeflerini aynı tabloda takip et.",
+        id: "diet",
+        preview: ["Gün", "Öğün", "Hedef"],
+        title: "Diyet Planı",
+      },
+      {
+        accent: "purple",
+        description: "Hedeflerini ölçülebilir adımlara ayır.",
+        id: "goals",
+        preview: ["Hedef", "Ölçüm", "Tarih"],
+        title: "Hedef Takibi",
+      },
+      {
+        accent: "yellow",
+        description: "Alışkanlıklarını haftalık ritimde takip et.",
+        id: "habits",
+        preview: ["Alışkanlık", "Sıklık", "Durum"],
+        title: "Alışkanlık Takibi",
+      },
+      {
+        accent: "blue",
+        description: "Gelir, gider ve bütçe notlarını düzenle.",
+        id: "finance",
+        preview: ["Kalem", "Tutar", "Durum"],
+        title: "Bütçe Planı",
+      },
+      {
+        accent: "green",
+        description: "Ders, kaynak ve tekrarlarını planla.",
+        id: "study",
+        preview: ["Konu", "Kaynak", "Tekrar"],
+        title: "Çalışma Planı",
+      },
     ],
   },
   en: {
@@ -364,7 +418,6 @@ const templateCopy: Record<
     quick: [
       { id: "emptyPage", title: "Empty page" },
       { id: "emptyDatabase", title: "Empty database" },
-      { id: "buildWithAi", title: "Build with AI" },
     ],
     suggestedItems: [
       {
@@ -395,6 +448,41 @@ const templateCopy: Record<
         preview: ["Idea", "Created by", "Priority"],
         title: "Brainstorm Session",
       },
+      {
+        accent: "teal",
+        description: "Track meals, water, and goals in one table.",
+        id: "diet",
+        preview: ["Day", "Meal", "Goal"],
+        title: "Diet Plan",
+      },
+      {
+        accent: "purple",
+        description: "Turn goals into measurable steps.",
+        id: "goals",
+        preview: ["Goal", "Metric", "Date"],
+        title: "Goal Tracker",
+      },
+      {
+        accent: "yellow",
+        description: "Follow your habits across the week.",
+        id: "habits",
+        preview: ["Habit", "Rhythm", "Status"],
+        title: "Habit Tracker",
+      },
+      {
+        accent: "blue",
+        description: "Organize income, expenses, and budget notes.",
+        id: "finance",
+        preview: ["Item", "Amount", "Status"],
+        title: "Budget Planner",
+      },
+      {
+        accent: "green",
+        description: "Plan subjects, resources, and reviews.",
+        id: "study",
+        preview: ["Topic", "Resource", "Review"],
+        title: "Study Plan",
+      },
     ],
   },
 };
@@ -404,11 +492,15 @@ const quickTemplateIcons: Record<
   React.ComponentType<{ size?: number; className?: string }>
 > = {
   brainstorm: Lightbulb,
-  buildWithAi: Bot,
+  diet: Utensils,
   docs: Files,
   emptyDatabase: Table2,
   emptyPage: FileText,
+  finance: WalletCards,
+  goals: Target,
+  habits: CalendarCheck,
   projects: FolderKanban,
+  study: BookOpen,
   tasks: ClipboardList,
 };
 
@@ -421,7 +513,13 @@ function BlockMenu({
   onSelect: (type: BlockType, afterBlockId?: string) => void;
   t: Translation;
 }) {
-  const blockTypes: BlockType[] = ["paragraph", "heading", "todo", "list"];
+  const blockTypes: BlockType[] = [
+    "paragraph",
+    "heading",
+    "todo",
+    "list",
+    "table",
+  ];
 
   return (
     <div
@@ -466,7 +564,7 @@ function TemplateGallery({
     <div className="mt-8 space-y-7">
       <div className="grid gap-4 md:grid-cols-3">
         {copy.quick.map((template) => {
-          const Icon = quickTemplateIcons[template.id];
+          const Icon = quickTemplateIcons[template.id] ?? Table2;
           return (
             <button
               className="template-quick-card"
@@ -487,7 +585,7 @@ function TemplateGallery({
         </h2>
         <div className="grid gap-5 lg:grid-cols-2">
           {copy.suggestedItems.map((template) => {
-            const Icon = quickTemplateIcons[template.id];
+            const Icon = quickTemplateIcons[template.id] ?? Table2;
             return (
               <button
                 className={`template-card template-card-${template.accent}`}
@@ -511,13 +609,17 @@ function TemplateGallery({
                       <span key={item}>{item}</span>
                     ))}
                   </span>
-                  <span className="mt-3 grid grid-cols-3 gap-3">
-                    <span className="template-preview-line" />
-                    <span className="template-preview-pill" />
-                    <span className="template-preview-line" />
-                    <span className="template-preview-line" />
-                    <span className="template-preview-pill" />
-                    <span className="template-preview-line" />
+                  <span className="template-preview-table mt-3">
+                    {Array.from({ length: 3 }).map((_, rowIndex) => (
+                      <span
+                        className="grid grid-cols-3 gap-3 border-t border-current/10 py-2 first:border-t-0"
+                        key={rowIndex}
+                      >
+                        <span className="template-preview-line" />
+                        <span className="template-preview-pill" />
+                        <span className="template-preview-line" />
+                      </span>
+                    ))}
                   </span>
                 </span>
               </button>
@@ -683,7 +785,31 @@ function createId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function serializeTable(rows: string[][]) {
+  return rows.map((row) => row.join("\t")).join("\n");
+}
+
+function freshTableBlock(headers: string[], rowCount = 3): NoteBlock {
+  const safeRowCount = Math.max(1, rowCount);
+  const rows = [
+    headers,
+    ...Array.from({ length: safeRowCount }, () =>
+      Array.from({ length: headers.length }, () => ""),
+    ),
+  ];
+
+  return {
+    id: createId("block"),
+    type: "table",
+    content: serializeTable(rows),
+  };
+}
+
 function freshBlock(type: BlockType = "paragraph"): NoteBlock {
+  if (type === "table") {
+    return freshTableBlock(["Alan", "Durum", "Not"], 3);
+  }
+
   return {
     id: createId("block"),
     type,
@@ -693,24 +819,118 @@ function freshBlock(type: BlockType = "paragraph"): NoteBlock {
   };
 }
 
-function freshTodoBlock(lineCount = 3): NoteBlock {
-  const safeLineCount = Math.max(1, lineCount);
-
-  return {
-    id: createId("block"),
-    type: "todo",
-    content: Array.from({ length: safeLineCount }, () => "").join("\n"),
-    checked: false,
-    checkedLines: Array.from({ length: safeLineCount }, () => false),
-  };
-}
-
-function freshTemplateBlock(type: BlockType): NoteBlock {
-  if (type === "todo") {
-    return freshTodoBlock(1);
+function freshLocalizedBlock(type: BlockType, locale: Locale) {
+  if (type === "table") {
+    return freshTableBlock(
+      locale === "tr"
+        ? ["Alan", "Hedef", "Durum"]
+        : ["Area", "Goal", "Status"],
+      3,
+    );
   }
 
   return freshBlock(type);
+}
+
+function createTemplateBlocks(templateId: TemplateId, locale: Locale) {
+  const isTurkish = locale === "tr";
+  const tableHeaders: Partial<Record<TemplateId, string[]>> = {
+    diet: isTurkish
+      ? ["Gün", "Öğün", "Hedef", "Not"]
+      : ["Day", "Meal", "Goal", "Note"],
+    emptyDatabase: isTurkish
+      ? ["Alan", "Değer", "Durum"]
+      : ["Field", "Value", "Status"],
+    finance: isTurkish
+      ? ["Kalem", "Tutar", "Tür", "Durum"]
+      : ["Item", "Amount", "Type", "Status"],
+    goals: isTurkish
+      ? ["Hedef", "Ölçüm", "Son tarih", "Durum"]
+      : ["Goal", "Metric", "Due date", "Status"],
+    habits: isTurkish
+      ? ["Alışkanlık", "Sıklık", "Bu hafta", "Not"]
+      : ["Habit", "Rhythm", "This week", "Note"],
+    projects: isTurkish
+      ? ["Proje", "Aşama", "Sorumlu", "Sonraki adım"]
+      : ["Project", "Stage", "Owner", "Next step"],
+    study: isTurkish
+      ? ["Konu", "Kaynak", "Tekrar", "Durum"]
+      : ["Topic", "Resource", "Review", "Status"],
+    tasks: isTurkish
+      ? ["Görev", "Öncelik", "Tarih", "Durum"]
+      : ["Task", "Priority", "Date", "Status"],
+  };
+
+  if (templateId === "emptyPage") {
+    return [freshBlock("paragraph")];
+  }
+
+  if (templateId === "brainstorm") {
+    return [freshTableBlock(isTurkish ? ["Fikir", "Etki", "Sonraki adım"] : ["Idea", "Impact", "Next step"], 4)];
+  }
+
+  if (templateId === "docs") {
+    return [freshTableBlock(isTurkish ? ["Doküman", "Sahip", "Durum", "Güncelleme"] : ["Document", "Owner", "Status", "Update"], 4)];
+  }
+
+  const headers = tableHeaders[templateId];
+  return headers ? [freshTableBlock(headers, 4)] : [freshLocalizedBlock("table", locale)];
+}
+
+function defaultTableRows(locale: Locale) {
+  const headers =
+    locale === "tr" ? ["Alan", "Hedef", "Durum"] : ["Area", "Goal", "Status"];
+
+  return [
+    headers,
+    ["", "", ""],
+    ["", "", ""],
+    ["", "", ""],
+  ];
+}
+
+function localizeDefaultTableRows(rows: string[][], locale: Locale) {
+  if (
+    locale === "en" &&
+    rows[0]?.join("\t") === "Alan\tDurum\tNot"
+  ) {
+    return [["Area", "Status", "Note"], ...rows.slice(1)];
+  }
+
+  if (
+    locale === "en" &&
+    rows[0]?.join("\t") === "Alan\tHedef\tDurum"
+  ) {
+    return [["Area", "Goal", "Status"], ...rows.slice(1)];
+  }
+
+  return rows;
+}
+
+function parseTable(content: string, locale: Locale) {
+  if (content.trim() === "") {
+    return defaultTableRows(locale);
+  }
+
+  const rows = content.split("\n").map((row) => row.split("\t"));
+  const normalizedRows = localizeDefaultTableRows(rows, locale);
+
+  const columnCount = Math.max(2, ...normalizedRows.map((row) => row.length));
+  const paddedRows = normalizedRows.map((row) => [
+    ...row,
+    ...Array.from({ length: columnCount - row.length }, () => ""),
+  ]);
+
+  if (paddedRows.length === 1) {
+    return [
+      paddedRows[0],
+      ...Array.from({ length: 3 }, () =>
+        Array.from({ length: columnCount }, () => ""),
+      ),
+    ];
+  }
+
+  return paddedRows;
 }
 
 function todoLines(block: NoteBlock) {
@@ -1104,6 +1324,24 @@ export default function Home() {
     }));
   }
 
+  function updateTableCell(
+    block: NoteBlock,
+    rowIndex: number,
+    columnIndex: number,
+    value: string,
+  ) {
+    const rows = parseTable(block.content, locale);
+    rows[rowIndex][columnIndex] = value;
+    updateBlock(block.id, { content: serializeTable(rows) });
+  }
+
+  function addTableRow(block: NoteBlock) {
+    const rows = parseTable(block.content, locale);
+    const columnCount = rows[0]?.length ?? 3;
+    rows.push(Array.from({ length: columnCount }, () => ""));
+    updateBlock(block.id, { content: serializeTable(rows) });
+  }
+
   function updateTodoLine(block: NoteBlock, lineIndex: number, value: string) {
     const lines = todoLines(block);
     const checkedLines = todoCheckedLines(block, lines.length);
@@ -1170,9 +1408,11 @@ export default function Home() {
       ...page,
       blocks: afterBlockId
         ? page.blocks.flatMap((block) =>
-            block.id === afterBlockId ? [block, freshBlock(type)] : [block],
+            block.id === afterBlockId
+              ? [block, freshLocalizedBlock(type, locale)]
+              : [block],
           )
-        : [...page.blocks, freshBlock(type)],
+        : [...page.blocks, freshLocalizedBlock(type, locale)],
     }));
     setOpenBlockMenu(null);
   }
@@ -1183,18 +1423,7 @@ export default function Home() {
       templates.quick.find((template) => template.id === templateId) ??
       templates.suggestedItems.find((template) => template.id === templateId);
 
-    const templateBlocks: Partial<Record<TemplateId, BlockType[]>> = {
-      brainstorm: ["list"],
-      buildWithAi: ["paragraph"],
-      docs: ["list"],
-      emptyDatabase: ["list"],
-      emptyPage: ["paragraph"],
-      projects: ["todo", "list"],
-      tasks: ["todo"],
-    };
-    const nextBlocks = (templateBlocks[templateId] ?? ["paragraph"]).map(
-      freshTemplateBlock,
-    );
+    const nextBlocks = createTemplateBlocks(templateId, locale);
 
     const newPage: NotePage = {
       id: createId("page"),
@@ -1211,9 +1440,17 @@ export default function Home() {
               ? "📄"
               : templateId === "brainstorm"
                 ? "💡"
-                : templateId === "buildWithAi"
-                  ? "✨"
-                  : templateId === "emptyDatabase"
+                : templateId === "diet"
+                  ? "🥗"
+                  : templateId === "goals"
+                    ? "🎯"
+                    : templateId === "habits"
+                      ? "📅"
+                      : templateId === "finance"
+                        ? "💳"
+                        : templateId === "study"
+                          ? "📚"
+                : templateId === "emptyDatabase"
                     ? "📊"
                     : "",
       updatedAt: new Date().toISOString(),
@@ -1281,7 +1518,7 @@ export default function Home() {
                 <LayoutGrid size={18} />
               </div>
               <div>
-                <p className="text-sm font-semibold">Not Workspace</p>
+                <p className="text-sm font-semibold">TreeNote</p>
                 <p className="text-xs text-[#6f7f7b]">{t.appSubtitle}</p>
               </div>
             </div>
@@ -1660,6 +1897,63 @@ export default function Home() {
                                 </div>
                               );
                             })}
+                          </div>
+                        </>
+                      ) : block.type === "table" ? (
+                        <>
+                          <span className="mt-2 grid size-6 place-items-center rounded-md text-[#7b8b87]">
+                            <Icon size={16} />
+                          </span>
+
+                          <div className="col-start-3 col-end-5 pr-9">
+                            <div className="note-table-shell overflow-x-auto rounded-lg border border-[#d5e2de] bg-transparent">
+                              <div className="min-w-[560px]">
+                                {parseTable(block.content, locale).map(
+                                  (row, rowIndex) => (
+                                    <div
+                                      className={`grid border-b border-[#dce8e4] last:border-b-0`}
+                                      key={`${block.id}-${rowIndex}`}
+                                      style={{
+                                        gridTemplateColumns: `repeat(${row.length}, minmax(130px, 1fr))`,
+                                      }}
+                                    >
+                                      {row.map((cell, columnIndex) => (
+                                        <input
+                                          className={`note-table-input min-h-11 border-r border-[#dce8e4] bg-transparent px-3 text-sm outline-none last:border-r-0 placeholder:text-[#9eaca8] ${
+                                            rowIndex === 0
+                                              ? "font-semibold text-[#43524e]"
+                                              : "text-[#26332f]"
+                                          }`}
+                                          key={`${block.id}-${rowIndex}-${columnIndex}`}
+                                          onChange={(event) =>
+                                            updateTableCell(
+                                              block,
+                                              rowIndex,
+                                              columnIndex,
+                                              event.target.value,
+                                            )
+                                          }
+                                          placeholder={
+                                            rowIndex === 0
+                                              ? t.blockPlaceholder.table
+                                              : ""
+                                          }
+                                          value={cell}
+                                        />
+                                      ))}
+                                    </div>
+                                  ),
+                                )}
+                              </div>
+                            </div>
+                            <button
+                              className="mt-2 inline-flex h-8 items-center gap-2 rounded-md border border-[#cfdcd8] bg-white/70 px-3 text-xs font-medium text-[#596965] transition hover:border-[#9bb8b0] hover:bg-white"
+                              onClick={() => addTableRow(block)}
+                              type="button"
+                            >
+                              <Plus size={14} />
+                              {t.addTableRow}
+                            </button>
                           </div>
                         </>
                       ) : (

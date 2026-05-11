@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Not Workspace",
-  description: "Web tabanlı Notion benzeri not uygulaması MVP",
+  title: "TreeNote",
+  description: "Düşüncelerini dallandır",
 };
 
 export default function RootLayout({
