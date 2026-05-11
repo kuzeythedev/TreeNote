@@ -10,6 +10,8 @@ import {
   Files,
   FolderKanban,
   Heading1,
+  Eye,
+  EyeOff,
   Languages,
   Lightbulb,
   LogOut,
@@ -17,6 +19,7 @@ import {
   List,
   Loader2,
   Plus,
+  Phone,
   Search,
   Settings,
   Table2,
@@ -100,7 +103,10 @@ type Translation = {
   authTitle: string;
   authBody: string;
   email: string;
+  phone: string;
   password: string;
+  showPassword: string;
+  hidePassword: string;
   signIn: string;
   signUp: string;
   signingIn: string;
@@ -174,7 +180,10 @@ const translations: Record<Locale, Translation> = {
     authTitle: "Notlarına giriş yap",
     authBody: "Supabase hesabınla giriş yap veya yeni bir hesap oluştur.",
     email: "E-posta",
+    phone: "Telefon numarası",
     password: "Şifre",
+    showPassword: "Şifreyi göster",
+    hidePassword: "Şifreyi gizle",
     signIn: "Giriş yap",
     signUp: "Kayıt ol",
     signingIn: "Giriş yapılıyor",
@@ -191,8 +200,8 @@ const translations: Record<Locale, Translation> = {
     authEmailRequired: "E-posta adresini yaz.",
     authEmailInvalid: "Geçerli bir e-posta adresi yaz.",
     authPasswordRequired: "Şifreni yaz.",
-    authPasswordShort: "Kayıt olmak için şifre en az 6 karakter olmalı.",
-    authInvalidCredentials: "E-posta veya şifre hatalı.",
+    authPasswordShort: "Şifre en az 6 karakter olmalı.",
+    authInvalidCredentials: "E-posta veya şifre hatalı. Hesabın yoksa önce kayıt ol.",
     authEmailNotConfirmed: "Giriş yapmadan önce e-posta adresini doğrula.",
     authGenericError: "İşlem tamamlanamadı. Bilgilerini kontrol edip tekrar dene.",
     authConnectionError:
@@ -249,7 +258,10 @@ const translations: Record<Locale, Translation> = {
     authTitle: "Sign in to your notes",
     authBody: "Use your Supabase account or create a new one.",
     email: "Email",
+    phone: "Phone number",
     password: "Password",
+    showPassword: "Show password",
+    hidePassword: "Hide password",
     signIn: "Sign in",
     signUp: "Sign up",
     signingIn: "Signing in",
@@ -266,8 +278,9 @@ const translations: Record<Locale, Translation> = {
     authEmailRequired: "Enter your email address.",
     authEmailInvalid: "Enter a valid email address.",
     authPasswordRequired: "Enter your password.",
-    authPasswordShort: "Password must be at least 6 characters to sign up.",
-    authInvalidCredentials: "Email or password is incorrect.",
+    authPasswordShort: "Password must be at least 6 characters.",
+    authInvalidCredentials:
+      "Email or password is incorrect. Create an account first if you do not have one.",
     authEmailNotConfirmed: "Confirm your email address before signing in.",
     authGenericError: "Could not complete the request. Check your details and try again.",
     authConnectionError:
@@ -700,7 +713,9 @@ function AuthPanel({
   const supabase = useMemo(() => createClient(), []);
   const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -724,11 +739,12 @@ function AuthPanel({
       return;
     }
 
-    if (mode === "sign-up" && password.length < 6) {
+    if (password.length < 6) {
       setMessage(t.authPasswordShort);
       return;
     }
 
+    const normalizedPhone = phone.trim();
     setMessage("");
     setIsSubmitting(true);
 
@@ -742,6 +758,13 @@ function AuthPanel({
           : await supabase.auth.signUp({
               email: normalizedEmail,
               password,
+              options: normalizedPhone
+                ? {
+                    data: {
+                      phone: normalizedPhone,
+                    },
+                  }
+                : undefined,
             });
 
       setIsSubmitting(false);
@@ -796,7 +819,7 @@ function AuthPanel({
           <label className="block text-sm font-medium text-[#43524e]">
             {t.email}
             <input
-              className="mt-1 h-11 w-full rounded-lg border border-[#d5e2de] bg-[#fbfefd] px-3 outline-none focus:border-[#7da69c]"
+              className="auth-input mt-1 h-11 w-full rounded-lg border border-[#d5e2de] bg-[#fbfefd] px-3 outline-none focus:border-[#7da69c]"
               dir="ltr"
               inputMode="email"
               onChange={(event) => setEmail(event.target.value)}
@@ -804,14 +827,45 @@ function AuthPanel({
               value={email}
             />
           </label>
+          {mode === "sign-up" && (
+            <label className="block text-sm font-medium text-[#43524e]">
+              {t.phone}
+              <div className="relative mt-1">
+                <Phone
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#7b8d88]"
+                  size={17}
+                />
+                <input
+                  className="auth-input h-11 w-full rounded-lg border border-[#d5e2de] bg-[#fbfefd] px-10 outline-none focus:border-[#7da69c]"
+                  dir="ltr"
+                  inputMode="tel"
+                  onChange={(event) => setPhone(event.target.value)}
+                  type="tel"
+                  value={phone}
+                />
+              </div>
+            </label>
+          )}
           <label className="block text-sm font-medium text-[#43524e]">
             {t.password}
-            <input
-              className="mt-1 h-11 w-full rounded-lg border border-[#d5e2de] bg-[#fbfefd] px-3 outline-none focus:border-[#7da69c]"
-              onChange={(event) => setPassword(event.target.value)}
-              type="password"
-              value={password}
-            />
+            <div className="relative mt-1">
+              <input
+                className="auth-input h-11 w-full rounded-lg border border-[#d5e2de] bg-[#fbfefd] px-3 pr-11 outline-none focus:border-[#7da69c]"
+                onChange={(event) => setPassword(event.target.value)}
+                type={isPasswordVisible ? "text" : "password"}
+                value={password}
+              />
+              <button
+                aria-label={isPasswordVisible ? t.hidePassword : t.showPassword}
+                className="absolute right-2 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-md text-[#6f7f7b] transition hover:bg-[#e8f1ee] hover:text-[#26332f]"
+                onClick={() =>
+                  setIsPasswordVisible((currentValue) => !currentValue)
+                }
+                type="button"
+              >
+                {isPasswordVisible ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
           </label>
 
           {message && (

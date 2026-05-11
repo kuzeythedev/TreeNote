@@ -33,6 +33,22 @@ textarea {
   font: inherit;
 }
 
+.auth-input,
+.auth-input:focus {
+  background: #fbfefd;
+  box-shadow: none;
+  caret-color: #1e2a27;
+  color: #1e2a27;
+}
+
+.auth-input:-webkit-autofill,
+.auth-input:-webkit-autofill:hover,
+.auth-input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px #fbfefd inset;
+  -webkit-text-fill-color: #1e2a27;
+  caret-color: #1e2a27;
+}
+
 textarea {
   scrollbar-width: thin;
 }
@@ -302,6 +318,24 @@ textarea {
   background-color: #1f1f1f !important;
   border-color: #2d2b33 !important;
   color: #ffffff !important;
+}
+
+.dark-theme .auth-input,
+.dark-theme .auth-input:focus {
+  background: #171717 !important;
+  border-color: #5b554c !important;
+  box-shadow: none !important;
+  caret-color: #ffffff;
+  color: #ffffff !important;
+  color-scheme: dark;
+}
+
+.dark-theme .auth-input:-webkit-autofill,
+.dark-theme .auth-input:-webkit-autofill:hover,
+.dark-theme .auth-input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px #171717 inset !important;
+  -webkit-text-fill-color: #ffffff !important;
+  caret-color: #ffffff;
 }
 
 .dark-theme .note-title-input {
