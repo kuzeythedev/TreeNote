@@ -112,6 +112,14 @@ type Translation = {
   authConfigTitle: string;
   authConfigBody: string;
   authSuccess: string;
+  authEmailRequired: string;
+  authEmailInvalid: string;
+  authPasswordRequired: string;
+  authPasswordShort: string;
+  authInvalidCredentials: string;
+  authEmailNotConfirmed: string;
+  authGenericError: string;
+  authConnectionError: string;
 };
 
 const translations: Record<Locale, Translation> = {
@@ -180,6 +188,15 @@ const translations: Record<Locale, Translation> = {
       ".env.local dosyasına NEXT_PUBLIC_SUPABASE_URL ve NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY değerlerini ekle.",
     authSuccess:
       "Kayıt isteği gönderildi. Supabase e-posta doğrulaması açıksa gelen kutunu kontrol et.",
+    authEmailRequired: "E-posta adresini yaz.",
+    authEmailInvalid: "Geçerli bir e-posta adresi yaz.",
+    authPasswordRequired: "Şifreni yaz.",
+    authPasswordShort: "Kayıt olmak için şifre en az 6 karakter olmalı.",
+    authInvalidCredentials: "E-posta veya şifre hatalı.",
+    authEmailNotConfirmed: "Giriş yapmadan önce e-posta adresini doğrula.",
+    authGenericError: "İşlem tamamlanamadı. Bilgilerini kontrol edip tekrar dene.",
+    authConnectionError:
+      "Supabase bağlantısı kurulamadı. İnternetini veya proje ayarlarını kontrol et.",
   },
   en: {
     appSubtitle: "Branch out your thoughts",
@@ -246,6 +263,15 @@ const translations: Record<Locale, Translation> = {
       "Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY to .env.local.",
     authSuccess:
       "Sign-up request sent. If Supabase email confirmation is enabled, check your inbox.",
+    authEmailRequired: "Enter your email address.",
+    authEmailInvalid: "Enter a valid email address.",
+    authPasswordRequired: "Enter your password.",
+    authPasswordShort: "Password must be at least 6 characters to sign up.",
+    authInvalidCredentials: "Email or password is incorrect.",
+    authEmailNotConfirmed: "Confirm your email address before signing in.",
+    authGenericError: "Could not complete the request. Check your details and try again.",
+    authConnectionError:
+      "Could not connect to Supabase. Check your connection or project settings.",
   },
 };
 
@@ -631,6 +657,37 @@ function TemplateGallery({
   );
 }
 
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function authErrorMessage(message: string, t: Translation) {
+  const normalizedMessage = message.toLocaleLowerCase("en-US");
+
+  if (
+    normalizedMessage.includes("invalid login credentials") ||
+    normalizedMessage.includes("invalid credentials")
+  ) {
+    return t.authInvalidCredentials;
+  }
+
+  if (
+    normalizedMessage.includes("email not confirmed") ||
+    normalizedMessage.includes("not confirmed")
+  ) {
+    return t.authEmailNotConfirmed;
+  }
+
+  if (
+    normalizedMessage.includes("password") &&
+    normalizedMessage.includes("6")
+  ) {
+    return t.authPasswordShort;
+  }
+
+  return t.authGenericError;
+}
+
 function AuthPanel({
   locale,
   t,
@@ -651,19 +708,46 @@ function AuthPanel({
     event.preventDefault();
     if (!supabase) return;
 
+    const normalizedEmail = email.trim();
+    if (!normalizedEmail) {
+      setMessage(t.authEmailRequired);
+      return;
+    }
+
+    if (!isValidEmail(normalizedEmail)) {
+      setMessage(t.authEmailInvalid);
+      return;
+    }
+
+    if (!password) {
+      setMessage(t.authPasswordRequired);
+      return;
+    }
+
+    if (mode === "sign-up" && password.length < 6) {
+      setMessage(t.authPasswordShort);
+      return;
+    }
+
     setMessage("");
     setIsSubmitting(true);
 
     try {
       const result =
         mode === "sign-in"
-          ? await supabase.auth.signInWithPassword({ email, password })
-          : await supabase.auth.signUp({ email, password });
+          ? await supabase.auth.signInWithPassword({
+              email: normalizedEmail,
+              password,
+            })
+          : await supabase.auth.signUp({
+              email: normalizedEmail,
+              password,
+            });
 
       setIsSubmitting(false);
 
       if (result.error) {
-        setMessage(result.error.message);
+        setMessage(authErrorMessage(result.error.message, t));
         return;
       }
 
@@ -673,11 +757,7 @@ function AuthPanel({
       }
     } catch {
       setIsSubmitting(false);
-      setMessage(
-        locale === "tr"
-          ? "Supabase bağlantısı kurulamadı. İnternetini veya proje ayarlarını kontrol et."
-          : "Could not connect to Supabase. Check your connection or project settings.",
-      );
+      setMessage(t.authConnectionError);
     }
   }
 
@@ -712,7 +792,7 @@ function AuthPanel({
           </div>
         </div>
 
-        <form className="space-y-3" onSubmit={handleSubmit}>
+        <form className="space-y-3" noValidate onSubmit={handleSubmit}>
           <label className="block text-sm font-medium text-[#43524e]">
             {t.email}
             <input
@@ -720,8 +800,7 @@ function AuthPanel({
               dir="ltr"
               inputMode="email"
               onChange={(event) => setEmail(event.target.value)}
-              required
-              type="email"
+              type="text"
               value={email}
             />
           </label>
@@ -729,9 +808,7 @@ function AuthPanel({
             {t.password}
             <input
               className="mt-1 h-11 w-full rounded-lg border border-[#d5e2de] bg-[#fbfefd] px-3 outline-none focus:border-[#7da69c]"
-              minLength={6}
               onChange={(event) => setPassword(event.target.value)}
-              required
               type="password"
               value={password}
             />
