@@ -3,6 +3,8 @@
 import {
   BookOpen,
   CalendarCheck,
+  CalendarDays,
+  CalendarRange,
   CheckSquare,
   ClipboardList,
   Circle,
@@ -36,9 +38,10 @@ import { loadWorkspace, saveWorkspace } from "@/lib/supabase/workspace";
 
 type Locale = "tr" | "en";
 type Theme = "light" | "dark";
-type ActiveView = "notes" | "templates";
+type ActiveView = "notes" | "templates" | "agenda";
 type BlockType = "paragraph" | "heading" | "todo" | "list" | "table";
 type SyncStatus = "error" | "loading" | "local" | "saved" | "saving";
+type AgendaScope = "daily" | "monthly" | "yearly";
 type TemplateId =
   | "emptyPage"
   | "emptyDatabase"
@@ -68,7 +71,21 @@ type NotePage = {
   emoji: string;
   updatedAt: string;
   blocks: NoteBlock[];
+  system?: "agenda";
 };
+
+type AgendaItem = {
+  id: string;
+  text: string;
+  done: boolean;
+};
+
+type AgendaPlan = {
+  note: string;
+  items: AgendaItem[];
+};
+
+type AgendaState = Record<AgendaScope, AgendaPlan>;
 
 type Translation = {
   appSubtitle: string;
@@ -126,6 +143,17 @@ type Translation = {
   authEmailNotConfirmed: string;
   authGenericError: string;
   authConnectionError: string;
+  agenda: string;
+  agendaSubtitle: string;
+  agendaDaily: string;
+  agendaMonthly: string;
+  agendaYearly: string;
+  agendaNotePlaceholder: Record<AgendaScope, string>;
+  agendaItems: string;
+  agendaNewItem: string;
+  addAgendaItem: string;
+  deleteAgendaItem: string;
+  agendaEmptyItem: string;
 };
 
 const translations: Record<Locale, Translation> = {
@@ -206,6 +234,21 @@ const translations: Record<Locale, Translation> = {
     authGenericError: "İşlem tamamlanamadı. Bilgilerini kontrol edip tekrar dene.",
     authConnectionError:
       "Supabase bağlantısı kurulamadı. İnternetini veya proje ayarlarını kontrol et.",
+    agenda: "Ajanda",
+    agendaSubtitle: "Günlük, aylık ve yıllık planlarını yönet.",
+    agendaDaily: "Günlük",
+    agendaMonthly: "Aylık",
+    agendaYearly: "Yıllık",
+    agendaNotePlaceholder: {
+      daily: "Bugünün odağını, toplantılarını veya kısa notlarını yaz.",
+      monthly: "Bu ayın ana hedeflerini, teslimlerini ve takip noktalarını yaz.",
+      yearly: "Bu yılın büyük hedeflerini, temalarını ve dönüm noktalarını yaz.",
+    },
+    agendaItems: "Plan maddeleri",
+    agendaNewItem: "Yeni plan maddesi",
+    addAgendaItem: "Madde ekle",
+    deleteAgendaItem: "Maddeyi sil",
+    agendaEmptyItem: "Plan yaz",
   },
   en: {
     appSubtitle: "Branch out your thoughts",
@@ -285,6 +328,21 @@ const translations: Record<Locale, Translation> = {
     authGenericError: "Could not complete the request. Check your details and try again.",
     authConnectionError:
       "Could not connect to Supabase. Check your connection or project settings.",
+    agenda: "Agenda",
+    agendaSubtitle: "Plan daily, monthly, and yearly work.",
+    agendaDaily: "Daily",
+    agendaMonthly: "Monthly",
+    agendaYearly: "Yearly",
+    agendaNotePlaceholder: {
+      daily: "Write today's focus, meetings, or quick notes.",
+      monthly: "Write this month's main goals, deliverables, and follow-ups.",
+      yearly: "Write this year's bigger goals, themes, and milestones.",
+    },
+    agendaItems: "Plan items",
+    agendaNewItem: "New plan item",
+    addAgendaItem: "Add item",
+    deleteAgendaItem: "Delete item",
+    agendaEmptyItem: "Write a plan",
   },
 };
 
@@ -362,6 +420,17 @@ const emojiOptions = [
   "🏁",
   "✨",
 ];
+
+const emptyAgendaPlan: AgendaPlan = {
+  note: "",
+  items: [],
+};
+
+const defaultAgenda: AgendaState = {
+  daily: emptyAgendaPlan,
+  monthly: emptyAgendaPlan,
+  yearly: emptyAgendaPlan,
+};
 
 const templateCopy: Record<
   Locale,
@@ -670,6 +739,153 @@ function TemplateGallery({
   );
 }
 
+function AgendaView({
+  agenda,
+  onAddItem,
+  onDeleteItem,
+  onToggleItem,
+  onUpdateItem,
+  onUpdateNote,
+  t,
+}: {
+  agenda: AgendaState;
+  onAddItem: (scope: AgendaScope) => void;
+  onDeleteItem: (scope: AgendaScope, itemId: string) => void;
+  onToggleItem: (scope: AgendaScope, itemId: string) => void;
+  onUpdateItem: (scope: AgendaScope, itemId: string, text: string) => void;
+  onUpdateNote: (scope: AgendaScope, note: string) => void;
+  t: Translation;
+}) {
+  const [activeScope, setActiveScope] = useState<AgendaScope>("daily");
+  const scopes: Array<{
+    icon: React.ComponentType<{ size?: number; className?: string }>;
+    key: AgendaScope;
+    label: string;
+  }> = [
+    { icon: CalendarDays, key: "daily", label: t.agendaDaily },
+    { icon: CalendarCheck, key: "monthly", label: t.agendaMonthly },
+    { icon: CalendarRange, key: "yearly", label: t.agendaYearly },
+  ];
+  const activePlan = agenda[activeScope];
+
+  return (
+    <section className="light-tree-surface min-w-0 overflow-y-auto bg-[#fbfefd] px-5 py-8">
+      <div className="relative z-10 mx-auto w-full max-w-5xl">
+        <div className="mb-7 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h1 className="text-4xl font-semibold tracking-normal text-[#26332f]">
+              {t.agenda}
+            </h1>
+            <p className="mt-2 text-sm text-[#687874]">{t.agendaSubtitle}</p>
+          </div>
+          <div className="grid gap-2 rounded-lg border border-[#d5e2de] bg-white/70 p-1 shadow-sm sm:grid-cols-3">
+            {scopes.map((scope) => {
+              const Icon = scope.icon;
+              return (
+                <button
+                  className={`inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition ${
+                    activeScope === scope.key
+                      ? "bg-[#1e2a27] text-white"
+                      : "text-[#596965] hover:bg-[#e8f1ee] hover:text-[#26332f]"
+                  }`}
+                  key={scope.key}
+                  onClick={() => setActiveScope(scope.key)}
+                  type="button"
+                >
+                  <Icon size={16} />
+                  {scope.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="grid gap-5 lg:grid-cols-[1fr_1.05fr]">
+          <section className="agenda-panel rounded-lg border border-[#d5e2de] bg-white/55 p-5">
+            <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-[#43524e]">
+              <FileText size={17} />
+              {scopes.find((scope) => scope.key === activeScope)?.label}
+            </div>
+            <textarea
+              className="note-textarea min-h-[280px] w-full resize-none bg-transparent text-lg leading-8 outline-none placeholder:text-[#9eaca8]"
+              onChange={(event) => onUpdateNote(activeScope, event.target.value)}
+              placeholder={t.agendaNotePlaceholder[activeScope]}
+              value={activePlan.note}
+            />
+          </section>
+
+          <section className="agenda-panel rounded-lg border border-[#d5e2de] bg-white/55 p-5">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-sm font-semibold text-[#43524e]">
+                <CheckSquare size={17} />
+                {t.agendaItems}
+              </div>
+              <button
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-[#cfdcd8] bg-white/70 px-3 text-xs font-medium text-[#596965] transition hover:border-[#9bb8b0] hover:bg-white"
+                onClick={() => onAddItem(activeScope)}
+                type="button"
+              >
+                <Plus size={14} />
+                {t.addAgendaItem}
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {(activePlan.items.length ? activePlan.items : []).map((item) => (
+                <div
+                  className="group flex min-h-11 items-center gap-3 rounded-lg border border-transparent px-2 transition hover:border-[#d5e2de] hover:bg-white/45"
+                  key={item.id}
+                >
+                  <button
+                    aria-label={t.toggleBlock}
+                    className="grid size-7 shrink-0 place-items-center rounded-md text-[#7b8b87] transition hover:bg-[#e8f1ee] hover:text-[#0f8a68]"
+                    onClick={() => onToggleItem(activeScope, item.id)}
+                    type="button"
+                  >
+                    <CheckSquare
+                      className={item.done ? "text-[#0f8a68]" : ""}
+                      size={18}
+                    />
+                  </button>
+                  <input
+                    className={`min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-[#9eaca8] ${
+                      item.done ? "text-[#879591] line-through" : ""
+                    }`}
+                    onChange={(event) =>
+                      onUpdateItem(activeScope, item.id, event.target.value)
+                    }
+                    placeholder={t.agendaEmptyItem}
+                    value={item.text}
+                  />
+                  <button
+                    aria-label={t.deleteAgendaItem}
+                    className="grid size-7 shrink-0 place-items-center rounded-md text-[#9aa8a4] opacity-0 transition hover:bg-[#fde8e5] hover:text-[#b42318] group-hover:opacity-100 focus:opacity-100"
+                    onClick={() => onDeleteItem(activeScope, item.id)}
+                    type="button"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              ))}
+
+              {activePlan.items.length === 0 && (
+                <button
+                  className="flex min-h-14 w-full items-center justify-center gap-2 rounded-lg border border-dashed border-[#cfdcd8] bg-transparent text-sm font-medium text-[#687874] transition hover:border-[#9bb8b0] hover:text-[#26332f]"
+                  onClick={() => onAddItem(activeScope)}
+                  type="button"
+                >
+                  <Plus size={16} />
+                  {t.agendaNewItem}
+                </button>
+              )}
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
@@ -703,12 +919,18 @@ function authErrorMessage(message: string, t: Translation) {
 
 function AuthPanel({
   locale,
+  theme,
   t,
   onAuthChange,
+  onLocaleChange,
+  onThemeChange,
 }: {
   locale: Locale;
+  theme: Theme;
   t: Translation;
   onAuthChange: (session: Session | null) => void;
+  onLocaleChange: (locale: Locale) => void;
+  onThemeChange: (theme: Theme) => void;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in");
@@ -904,9 +1126,55 @@ function AuthPanel({
           {mode === "sign-in" ? t.signUp : t.signIn}
         </button>
 
-        <p className="mt-5 text-xs text-[#82908c]">
-          {locale === "tr" ? "Dil: Türkçe" : "Language: English"}
-        </p>
+        <div className="auth-preferences mt-5 space-y-3 rounded-lg border border-[#d5e2de] bg-[#fbfefd] p-3">
+          <div>
+            <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-[#596965]">
+              <Languages size={15} />
+              {t.language}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {(["tr", "en"] as const).map((option) => (
+                <button
+                  aria-pressed={locale === option}
+                  className={`h-9 rounded-md border px-3 text-sm font-medium transition ${
+                    locale === option
+                      ? "border-[#7da69c] bg-[#e8f1ee] text-[#1e2a27]"
+                      : "border-[#d5e2de] bg-white text-[#6b7a76] hover:border-[#9bb8b0]"
+                  }`}
+                  key={option}
+                  onClick={() => onLocaleChange(option)}
+                  type="button"
+                >
+                  {option === "tr" ? t.turkish : t.english}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-[#596965]">
+              <Settings size={15} />
+              {t.theme}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {(["light", "dark"] as const).map((option) => (
+                <button
+                  aria-pressed={theme === option}
+                  className={`h-9 rounded-md border px-3 text-sm font-medium transition ${
+                    theme === option
+                      ? "border-[#7da69c] bg-[#e8f1ee] text-[#1e2a27]"
+                      : "border-[#d5e2de] bg-white text-[#6b7a76] hover:border-[#9bb8b0]"
+                  }`}
+                  key={option}
+                  onClick={() => onThemeChange(option)}
+                  type="button"
+                >
+                  {option === "light" ? t.lightTheme : t.darkTheme}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   );
@@ -1130,12 +1398,88 @@ function displayEmoji(emoji: string) {
   return emoji === "○" ? "" : emoji;
 }
 
+function normalizeAgenda(value: unknown): AgendaState {
+  const source = value as Partial<Record<AgendaScope, Partial<AgendaPlan>>>;
+
+  return {
+    daily: normalizeAgendaPlan(source?.daily),
+    monthly: normalizeAgendaPlan(source?.monthly),
+    yearly: normalizeAgendaPlan(source?.yearly),
+  };
+}
+
+function normalizeAgendaPlan(plan?: Partial<AgendaPlan>): AgendaPlan {
+  return {
+    note: typeof plan?.note === "string" ? plan.note : "",
+    items: Array.isArray(plan?.items)
+      ? plan.items.map((item) => ({
+          id:
+            typeof item.id === "string" && item.id
+              ? item.id
+              : createId("agenda-item"),
+          text: typeof item.text === "string" ? item.text : "",
+          done: Boolean(item.done),
+        }))
+      : [],
+  };
+}
+
+function extractAgenda(pages: NotePage[]) {
+  const agendaPage = pages.find((page) => page.system === "agenda");
+  if (!agendaPage?.blocks[0]?.content) {
+    return defaultAgenda;
+  }
+
+  try {
+    return normalizeAgenda(JSON.parse(agendaPage.blocks[0].content));
+  } catch {
+    return defaultAgenda;
+  }
+}
+
+function parseStoredAgenda(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    return normalizeAgenda(JSON.parse(value));
+  } catch {
+    return null;
+  }
+}
+
+function withoutSystemPages(pages: NotePage[]) {
+  return pages.filter((page) => !page.system);
+}
+
+function pagesWithAgenda(pages: NotePage[], agenda: AgendaState): NotePage[] {
+  return [
+    ...withoutSystemPages(pages),
+    {
+      id: "system-agenda",
+      title: "Agenda data",
+      emoji: "📅",
+      updatedAt: new Date().toISOString(),
+      system: "agenda",
+      blocks: [
+        {
+          id: "system-agenda-data",
+          type: "paragraph",
+          content: JSON.stringify(agenda),
+        },
+      ],
+    },
+  ];
+}
+
 function createWorkspaceSnapshot(
   pages: NotePage[],
   locale: Locale,
   theme: Theme,
+  agenda: AgendaState,
 ) {
-  return JSON.stringify({ locale, pages, theme });
+  return JSON.stringify({ agenda, locale, pages, theme });
 }
 
 function resizeTextarea(element: HTMLTextAreaElement) {
@@ -1162,6 +1506,7 @@ export default function Home() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [locale, setLocale] = useState<Locale>("tr");
   const [theme, setTheme] = useState<Theme>("light");
+  const [agenda, setAgenda] = useState<AgendaState>(defaultAgenda);
   const [session, setSession] = useState<Session | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(
     supabase ? "loading" : "local",
@@ -1190,6 +1535,7 @@ export default function Home() {
         const saved = window.localStorage.getItem("notion-lite-pages");
         const savedLocale = window.localStorage.getItem("notion-lite-locale");
         const savedTheme = window.localStorage.getItem("notion-lite-theme");
+        const savedAgenda = window.localStorage.getItem("notion-lite-agenda");
 
         if (savedLocale === "tr" || savedLocale === "en") {
           setLocale(savedLocale);
@@ -1201,8 +1547,14 @@ export default function Home() {
 
         if (saved !== null) {
           const storedPages = JSON.parse(saved) as NotePage[];
-          setPages(storedPages.map(removeGeneratedTemplateBlocks));
-          setActivePageId(storedPages[0]?.id ?? "");
+          const visiblePages = withoutSystemPages(storedPages).map(
+            removeGeneratedTemplateBlocks,
+          );
+          setAgenda(parseStoredAgenda(savedAgenda) ?? extractAgenda(storedPages));
+          setPages(visiblePages);
+          setActivePageId(visiblePages[0]?.id ?? "");
+        } else if (savedAgenda) {
+          setAgenda(parseStoredAgenda(savedAgenda) ?? defaultAgenda);
         }
       } finally {
         storageReadyRef.current = true;
@@ -1225,7 +1577,9 @@ export default function Home() {
     }
 
     setPages((currentPages) => {
-      const cleanedPages = currentPages.map(removeGeneratedTemplateBlocks);
+      const cleanedPages = withoutSystemPages(currentPages).map(
+        removeGeneratedTemplateBlocks,
+      );
       const hasChanged = cleanedPages.some(
         (page, index) => page.blocks.length !== currentPages[index].blocks.length,
       );
@@ -1300,10 +1654,12 @@ export default function Home() {
         }
 
         if (remoteWorkspace?.pages?.length) {
-          const remotePages = remoteWorkspace.pages.map(
+          const remotePages = withoutSystemPages(remoteWorkspace.pages).map(
             removeGeneratedTemplateBlocks,
           );
+          const remoteAgenda = extractAgenda(remoteWorkspace.pages);
           setPages(remotePages);
+          setAgenda(remoteAgenda);
           setActivePageId(remotePages[0]?.id ?? "");
           setLocale(remoteWorkspace.locale);
           setTheme(remoteWorkspace.theme);
@@ -1311,17 +1667,19 @@ export default function Home() {
             remotePages,
             remoteWorkspace.locale,
             remoteWorkspace.theme,
+            remoteAgenda,
           );
         } else {
           await saveWorkspace(syncClient, userId, {
             locale,
-            pages,
+            pages: pagesWithAgenda(pages, agenda),
             theme,
           });
           lastRemoteSnapshotRef.current = createWorkspaceSnapshot(
             pages,
             locale,
             theme,
+            agenda,
           );
         }
 
@@ -1338,15 +1696,16 @@ export default function Home() {
     return () => {
       isMounted = false;
     };
-  }, [locale, pages, session, supabase, theme]);
+  }, [agenda, locale, pages, session, supabase, theme]);
 
   useEffect(() => {
     if (storageReadyRef.current) {
       window.localStorage.setItem("notion-lite-pages", JSON.stringify(pages));
+      window.localStorage.setItem("notion-lite-agenda", JSON.stringify(agenda));
       window.localStorage.setItem("notion-lite-locale", locale);
       window.localStorage.setItem("notion-lite-theme", theme);
     }
-  }, [locale, pages, theme]);
+  }, [agenda, locale, pages, theme]);
 
   useEffect(() => {
     if (!supabase || !session || !remoteReadyRef.current) {
@@ -1355,7 +1714,7 @@ export default function Home() {
 
     const syncClient = supabase;
     const userId = session.user.id;
-    const snapshot = createWorkspaceSnapshot(pages, locale, theme);
+    const snapshot = createWorkspaceSnapshot(pages, locale, theme, agenda);
     if (snapshot === lastRemoteSnapshotRef.current) {
       return;
     }
@@ -1366,7 +1725,11 @@ export default function Home() {
 
     setSyncStatus("saving");
     saveTimerRef.current = window.setTimeout(() => {
-      saveWorkspace(syncClient, userId, { locale, pages, theme })
+      saveWorkspace(syncClient, userId, {
+        locale,
+        pages: pagesWithAgenda(pages, agenda),
+        theme,
+      })
         .then(() => {
           lastRemoteSnapshotRef.current = snapshot;
           setSyncStatus("saved");
@@ -1381,7 +1744,7 @@ export default function Home() {
         window.clearTimeout(saveTimerRef.current);
       }
     };
-  }, [locale, pages, session, supabase, theme]);
+  }, [agenda, locale, pages, session, supabase, theme]);
 
   useEffect(() => {
     function closeMenusWithEscape(event: KeyboardEvent) {
@@ -1444,6 +1807,55 @@ export default function Home() {
     if (pageId === activePageId) {
       setActivePageId(remainingPages[0]?.id ?? "");
     }
+  }
+
+  function updateAgendaPlan(
+    scope: AgendaScope,
+    updater: (plan: AgendaPlan) => AgendaPlan,
+  ) {
+    setAgenda((currentAgenda) => ({
+      ...currentAgenda,
+      [scope]: updater(currentAgenda[scope]),
+    }));
+  }
+
+  function updateAgendaNote(scope: AgendaScope, note: string) {
+    updateAgendaPlan(scope, (plan) => ({ ...plan, note }));
+  }
+
+  function addAgendaItem(scope: AgendaScope) {
+    updateAgendaPlan(scope, (plan) => ({
+      ...plan,
+      items: [
+        ...plan.items,
+        { id: createId("agenda-item"), text: "", done: false },
+      ],
+    }));
+  }
+
+  function updateAgendaItem(scope: AgendaScope, itemId: string, text: string) {
+    updateAgendaPlan(scope, (plan) => ({
+      ...plan,
+      items: plan.items.map((item) =>
+        item.id === itemId ? { ...item, text } : item,
+      ),
+    }));
+  }
+
+  function toggleAgendaItem(scope: AgendaScope, itemId: string) {
+    updateAgendaPlan(scope, (plan) => ({
+      ...plan,
+      items: plan.items.map((item) =>
+        item.id === itemId ? { ...item, done: !item.done } : item,
+      ),
+    }));
+  }
+
+  function deleteAgendaItem(scope: AgendaScope, itemId: string) {
+    updateAgendaPlan(scope, (plan) => ({
+      ...plan,
+      items: plan.items.filter((item) => item.id !== itemId),
+    }));
   }
 
   function updateBlock(blockId: string, patch: Partial<NoteBlock>) {
@@ -1633,7 +2045,16 @@ export default function Home() {
   }
 
   if (!session) {
-    return <AuthPanel locale={locale} onAuthChange={setSession} t={t} />;
+    return (
+      <AuthPanel
+        locale={locale}
+        onAuthChange={setSession}
+        onLocaleChange={setLocale}
+        onThemeChange={setTheme}
+        t={t}
+        theme={theme}
+      />
+    );
   }
 
   return (
@@ -1719,6 +2140,25 @@ export default function Home() {
             className="relative mt-4 border-t border-[#d5e2de] pt-3"
             onClick={(event) => event.stopPropagation()}
           >
+            <button
+              className={`mb-2 flex min-h-12 w-full items-center justify-between rounded-lg border p-3 text-left text-sm shadow-sm transition hover:border-[#9bb8b0] ${
+                activeView === "agenda"
+                  ? "border-[#9bb8b0] bg-white"
+                  : "border-[#d5e2de] bg-white"
+              }`}
+              onClick={() => {
+                setActiveView("agenda");
+                setSettingsOpen(false);
+              }}
+              type="button"
+            >
+              <span className="flex items-center gap-2 font-medium text-[#43524e]">
+                <CalendarDays size={16} />
+                {t.agenda}
+              </span>
+              <CalendarRange size={16} className="text-[#7b8b87]" />
+            </button>
+
             <button
               className={`mb-2 flex min-h-12 w-full items-center justify-between rounded-lg border p-3 text-left text-sm shadow-sm transition hover:border-[#9bb8b0] ${
                 activeView === "templates"
@@ -1824,7 +2264,17 @@ export default function Home() {
           </div>
         </aside>
 
-        {activeView === "templates" ? (
+        {activeView === "agenda" ? (
+          <AgendaView
+            agenda={agenda}
+            onAddItem={addAgendaItem}
+            onDeleteItem={deleteAgendaItem}
+            onToggleItem={toggleAgendaItem}
+            onUpdateItem={updateAgendaItem}
+            onUpdateNote={updateAgendaNote}
+            t={t}
+          />
+        ) : activeView === "templates" ? (
           <section className="light-tree-surface min-w-0 overflow-y-auto bg-[#fbfefd] px-5 py-8">
             <div className="relative z-10 mx-auto w-full max-w-5xl">
               <h1 className="mb-7 text-4xl font-semibold tracking-normal text-[#26332f]">

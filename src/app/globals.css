@@ -49,6 +49,14 @@ textarea {
   caret-color: #1e2a27;
 }
 
+.auth-preferences {
+  background: #fbfefd;
+}
+
+.agenda-panel {
+  backdrop-filter: blur(10px);
+}
+
 textarea {
   scrollbar-width: thin;
 }
@@ -336,6 +344,28 @@ textarea {
   -webkit-box-shadow: 0 0 0 1000px #171717 inset !important;
   -webkit-text-fill-color: #ffffff !important;
   caret-color: #ffffff;
+}
+
+.dark-theme .auth-preferences {
+  background: #171717 !important;
+  border-color: #2d2b33 !important;
+}
+
+.dark-theme .auth-preferences button {
+  background: #222222 !important;
+  border-color: #34323a !important;
+  color: #ffffff !important;
+}
+
+.dark-theme .auth-preferences button[aria-pressed="true"] {
+  background: #2c3a34 !important;
+  border-color: #64b59c !important;
+}
+
+.dark-theme .agenda-panel {
+  background: rgb(31 31 31 / 0.42) !important;
+  border-color: #34323a !important;
+  color: #ffffff !important;
 }
 
 .dark-theme .note-title-input {
