@@ -57,6 +57,10 @@ textarea {
   backdrop-filter: blur(10px);
 }
 
+.agenda-card {
+  backdrop-filter: blur(10px);
+}
+
 textarea {
   scrollbar-width: thin;
 }
@@ -366,6 +370,25 @@ textarea {
   background: rgb(31 31 31 / 0.42) !important;
   border-color: #34323a !important;
   color: #ffffff !important;
+}
+
+.dark-theme .agenda-card {
+  background: rgb(31 31 31 / 0.42) !important;
+  border-color: #34323a !important;
+  color: #ffffff !important;
+}
+
+.dark-theme .agenda-card:hover {
+  background: rgb(38 38 38 / 0.54) !important;
+}
+
+.dark-theme .agenda-card span {
+  color: #ffffff !important;
+}
+
+.dark-theme .agenda-year-grid > div {
+  background: rgb(22 22 22 / 0.36) !important;
+  border-color: #34323a !important;
 }
 
 .dark-theme .note-title-input {

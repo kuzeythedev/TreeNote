@@ -837,37 +837,80 @@ function AgendaView({
   const dayNotes = agenda.yearly.dayNotes ?? {};
   const selectedDayNote = dayNotes[selectedDate] ?? "";
   const weekDays = weekdayLabels(locale);
+  const completedItems = activePlan.items.filter((item) => item.done).length;
+  const writtenDayCount = Object.values(dayNotes).filter((note) =>
+    note.trim(),
+  ).length;
+
+  function scopeMeta(scope: AgendaScope) {
+    const plan = agenda[scope];
+    const done = plan.items.filter((item) => item.done).length;
+    const total = plan.items.length;
+
+    return {
+      done,
+      noteReady:
+        scope === "yearly"
+          ? writtenDayCount > 0 || Boolean(plan.note.trim())
+          : Boolean(plan.note.trim()),
+      total,
+    };
+  }
 
   return (
-    <section className="light-tree-surface min-w-0 overflow-y-auto bg-[#fbfefd] px-5 py-8">
-      <div className="relative z-10 mx-auto w-full max-w-5xl">
-        <div className="mb-7 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+    <section className="light-tree-surface min-w-0 overflow-y-auto bg-[#fbfefd] px-5 py-7">
+      <div className="relative z-10 mx-auto w-full max-w-6xl">
+        <div className="mb-5 flex flex-col gap-2">
           <div>
             <h1 className="text-4xl font-semibold tracking-normal text-[#26332f]">
               {t.agenda}
             </h1>
             <p className="mt-2 text-sm text-[#687874]">{t.agendaSubtitle}</p>
           </div>
-          <div className="grid gap-2 rounded-lg border border-[#d5e2de] bg-white/70 p-1 shadow-sm sm:grid-cols-3">
-            {scopes.map((scope) => {
-              const Icon = scope.icon;
-              return (
-                <button
-                  className={`inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition ${
-                    activeScope === scope.key
-                      ? "bg-[#1e2a27] text-white"
-                      : "text-[#596965] hover:bg-[#e8f1ee] hover:text-[#26332f]"
-                  }`}
-                  key={scope.key}
-                  onClick={() => setActiveScope(scope.key)}
-                  type="button"
-                >
-                  <Icon size={16} />
+        </div>
+
+        <div className="mb-5 grid gap-3 lg:grid-cols-3">
+          {scopes.map((scope) => {
+            const Icon = scope.icon;
+            const meta = scopeMeta(scope.key);
+            const isActive = activeScope === scope.key;
+
+            return (
+              <button
+                className={`agenda-card min-h-28 rounded-lg border p-4 text-left transition ${
+                  isActive
+                    ? "border-[#7da69c] bg-white/78 shadow-sm"
+                    : "border-[#d5e2de] bg-white/46 hover:border-[#9bb8b0] hover:bg-white/62"
+                }`}
+                key={scope.key}
+                onClick={() => setActiveScope(scope.key)}
+                type="button"
+              >
+                <span className="mb-4 flex items-center justify-between">
+                  <span className="grid size-9 place-items-center rounded-lg bg-[#e8f1ee] text-[#1e2a27]">
+                    <Icon size={18} />
+                  </span>
+                  <span className="rounded-full bg-[#e8f1ee] px-2.5 py-1 text-xs font-medium text-[#596965]">
+                    {meta.done}/{meta.total}
+                  </span>
+                </span>
+                <span className="block text-xl font-semibold text-[#26332f]">
                   {scope.label}
-                </button>
-              );
-            })}
-          </div>
+                </span>
+                <span className="mt-2 block text-sm text-[#687874]">
+                  {scope.key === "yearly"
+                    ? `${writtenDayCount} ${locale === "tr" ? "gün notu" : "day notes"}`
+                    : meta.noteReady
+                      ? locale === "tr"
+                        ? "Not hazır"
+                        : "Note ready"
+                      : locale === "tr"
+                        ? "Henüz boş"
+                        : "Empty"}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {activeScope === "yearly" && (
@@ -876,7 +919,7 @@ function AgendaView({
               <div>
                 <div className="flex items-center gap-2 text-sm font-semibold text-[#43524e]">
                   <CalendarRange size={17} />
-                  {t.agendaYearly}
+                  {selectedYear}
                 </div>
                 <p className="mt-1 text-xs text-[#687874]">
                   {t.yearlyCalendarHint}
@@ -913,17 +956,17 @@ function AgendaView({
               </div>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div className="agenda-year-grid grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
               {monthIndexes.map((monthIndex) => {
                 const offset = calendarOffset(selectedYear, monthIndex, locale);
                 const days = daysInMonth(selectedYear, monthIndex);
 
                 return (
                   <div
-                    className="rounded-lg border border-[#d5e2de] bg-white/40 p-3"
+                    className="rounded-lg border border-[#d5e2de] bg-white/36 p-3"
                     key={monthIndex}
                   >
-                    <h2 className="mb-2 text-sm font-semibold capitalize text-[#43524e]">
+                    <h2 className="mb-3 text-sm font-semibold capitalize text-[#43524e]">
                       {monthName(selectedYear, monthIndex, locale)}
                     </h2>
                     <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-medium text-[#82908c]">
@@ -977,16 +1020,22 @@ function AgendaView({
           </section>
         )}
 
-        <div className="grid gap-5 lg:grid-cols-[1fr_1.05fr]">
+        <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
           <section className="agenda-panel rounded-lg border border-[#d5e2de] bg-white/55 p-5">
-            <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-[#43524e]">
-              <FileText size={17} />
-              {activeScope === "yearly"
-                ? `${t.selectedDay}: ${formatAgendaDate(selectedDate, locale)}`
-                : scopes.find((scope) => scope.key === activeScope)?.label}
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-2 text-sm font-semibold text-[#43524e]">
+                <FileText size={17} />
+                {activeScope === "yearly"
+                  ? `${t.selectedDay}: ${formatAgendaDate(selectedDate, locale)}`
+                  : scopes.find((scope) => scope.key === activeScope)?.label}
+              </div>
+              <span className="rounded-full bg-[#e8f1ee] px-3 py-1 text-xs font-medium text-[#596965]">
+                {completedItems}/{activePlan.items.length}{" "}
+                {locale === "tr" ? "tamamlandı" : "done"}
+              </span>
             </div>
             <textarea
-              className="note-textarea min-h-[280px] w-full resize-none bg-transparent text-lg leading-8 outline-none placeholder:text-[#9eaca8]"
+              className="note-textarea min-h-[340px] w-full resize-none bg-transparent text-lg leading-8 outline-none placeholder:text-[#9eaca8]"
               onChange={(event) =>
                 activeScope === "yearly"
                   ? onUpdateDayNote(selectedDate, event.target.value)
@@ -1013,10 +1062,10 @@ function AgendaView({
               </button>
             </div>
 
-            <div className="space-y-2">
+            <div className="max-h-[430px] space-y-2 overflow-y-auto pr-1">
               {(activePlan.items.length ? activePlan.items : []).map((item) => (
                 <div
-                  className="group flex min-h-11 items-center gap-3 rounded-lg border border-transparent px-2 transition hover:border-[#d5e2de] hover:bg-white/45"
+                  className="group flex min-h-12 items-center gap-3 rounded-lg border border-[#dce8e4] bg-white/38 px-2 transition hover:border-[#c8d8d3] hover:bg-white/58"
                   key={item.id}
                 >
                   <button
