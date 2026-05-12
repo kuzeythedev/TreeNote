@@ -83,6 +83,7 @@ type AgendaItem = {
 type AgendaPlan = {
   note: string;
   items: AgendaItem[];
+  dayNotes?: Record<string, string>;
 };
 
 type AgendaState = Record<AgendaScope, AgendaPlan>;
@@ -154,6 +155,10 @@ type Translation = {
   addAgendaItem: string;
   deleteAgendaItem: string;
   agendaEmptyItem: string;
+  previousYear: string;
+  nextYear: string;
+  selectedDay: string;
+  yearlyCalendarHint: string;
 };
 
 const translations: Record<Locale, Translation> = {
@@ -249,6 +254,10 @@ const translations: Record<Locale, Translation> = {
     addAgendaItem: "Madde ekle",
     deleteAgendaItem: "Maddeyi sil",
     agendaEmptyItem: "Plan yaz",
+    previousYear: "Önceki yıl",
+    nextYear: "Sonraki yıl",
+    selectedDay: "Seçili gün",
+    yearlyCalendarHint: "Gün seçip o güne özel planını yaz.",
   },
   en: {
     appSubtitle: "Branch out your thoughts",
@@ -343,6 +352,10 @@ const translations: Record<Locale, Translation> = {
     addAgendaItem: "Add item",
     deleteAgendaItem: "Delete item",
     agendaEmptyItem: "Write a plan",
+    previousYear: "Previous year",
+    nextYear: "Next year",
+    selectedDay: "Selected day",
+    yearlyCalendarHint: "Select a day and write its plan.",
   },
 };
 
@@ -427,10 +440,12 @@ const emptyAgendaPlan: AgendaPlan = {
 };
 
 const defaultAgenda: AgendaState = {
-  daily: emptyAgendaPlan,
-  monthly: emptyAgendaPlan,
-  yearly: emptyAgendaPlan,
+  daily: { ...emptyAgendaPlan },
+  monthly: { ...emptyAgendaPlan },
+  yearly: { ...emptyAgendaPlan },
 };
+
+const monthIndexes = Array.from({ length: 12 }, (_, index) => index);
 
 const templateCopy: Record<
   Locale,
@@ -739,24 +754,76 @@ function TemplateGallery({
   );
 }
 
+function dateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function dateFromKey(key: string) {
+  const [year, month, day] = key.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function daysInMonth(year: number, monthIndex: number) {
+  return new Date(year, monthIndex + 1, 0).getDate();
+}
+
+function calendarOffset(year: number, monthIndex: number, locale: Locale) {
+  const day = new Date(year, monthIndex, 1).getDay();
+  return locale === "tr" ? (day + 6) % 7 : day;
+}
+
+function formatAgendaDate(key: string, locale: Locale) {
+  return new Intl.DateTimeFormat(locale === "tr" ? "tr-TR" : "en-US", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(dateFromKey(key));
+}
+
+function monthName(year: number, monthIndex: number, locale: Locale) {
+  return new Intl.DateTimeFormat(locale === "tr" ? "tr-TR" : "en-US", {
+    month: "long",
+  }).format(new Date(year, monthIndex, 1));
+}
+
+function weekdayLabels(locale: Locale) {
+  const baseDate = locale === "tr" ? new Date(2026, 4, 11) : new Date(2026, 4, 10);
+
+  return Array.from({ length: 7 }, (_, index) =>
+    new Intl.DateTimeFormat(locale === "tr" ? "tr-TR" : "en-US", {
+      weekday: "narrow",
+    }).format(new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() + index)),
+  );
+}
+
 function AgendaView({
   agenda,
+  locale,
   onAddItem,
   onDeleteItem,
+  onUpdateDayNote,
   onToggleItem,
   onUpdateItem,
   onUpdateNote,
   t,
 }: {
   agenda: AgendaState;
+  locale: Locale;
   onAddItem: (scope: AgendaScope) => void;
   onDeleteItem: (scope: AgendaScope, itemId: string) => void;
+  onUpdateDayNote: (date: string, note: string) => void;
   onToggleItem: (scope: AgendaScope, itemId: string) => void;
   onUpdateItem: (scope: AgendaScope, itemId: string, text: string) => void;
   onUpdateNote: (scope: AgendaScope, note: string) => void;
   t: Translation;
 }) {
   const [activeScope, setActiveScope] = useState<AgendaScope>("daily");
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedDate, setSelectedDate] = useState(dateKey(new Date()));
   const scopes: Array<{
     icon: React.ComponentType<{ size?: number; className?: string }>;
     key: AgendaScope;
@@ -767,6 +834,9 @@ function AgendaView({
     { icon: CalendarRange, key: "yearly", label: t.agendaYearly },
   ];
   const activePlan = agenda[activeScope];
+  const dayNotes = agenda.yearly.dayNotes ?? {};
+  const selectedDayNote = dayNotes[selectedDate] ?? "";
+  const weekDays = weekdayLabels(locale);
 
   return (
     <section className="light-tree-surface min-w-0 overflow-y-auto bg-[#fbfefd] px-5 py-8">
@@ -800,17 +870,130 @@ function AgendaView({
           </div>
         </div>
 
+        {activeScope === "yearly" && (
+          <section className="agenda-panel mb-5 rounded-lg border border-[#d5e2de] bg-white/55 p-5">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="flex items-center gap-2 text-sm font-semibold text-[#43524e]">
+                  <CalendarRange size={17} />
+                  {t.agendaYearly}
+                </div>
+                <p className="mt-1 text-xs text-[#687874]">
+                  {t.yearlyCalendarHint}
+                </p>
+              </div>
+              <div className="inline-flex items-center gap-2 self-start rounded-lg border border-[#d5e2de] bg-white/70 p-1">
+                <button
+                  aria-label={t.previousYear}
+                  className="grid size-8 place-items-center rounded-md text-[#596965] transition hover:bg-[#e8f1ee] hover:text-[#26332f]"
+                  onClick={() => {
+                    const nextYear = selectedYear - 1;
+                    setSelectedYear(nextYear);
+                    setSelectedDate(`${nextYear}-01-01`);
+                  }}
+                  type="button"
+                >
+                  ‹
+                </button>
+                <span className="min-w-16 text-center text-sm font-semibold text-[#26332f]">
+                  {selectedYear}
+                </span>
+                <button
+                  aria-label={t.nextYear}
+                  className="grid size-8 place-items-center rounded-md text-[#596965] transition hover:bg-[#e8f1ee] hover:text-[#26332f]"
+                  onClick={() => {
+                    const nextYear = selectedYear + 1;
+                    setSelectedYear(nextYear);
+                    setSelectedDate(`${nextYear}-01-01`);
+                  }}
+                  type="button"
+                >
+                  ›
+                </button>
+              </div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {monthIndexes.map((monthIndex) => {
+                const offset = calendarOffset(selectedYear, monthIndex, locale);
+                const days = daysInMonth(selectedYear, monthIndex);
+
+                return (
+                  <div
+                    className="rounded-lg border border-[#d5e2de] bg-white/40 p-3"
+                    key={monthIndex}
+                  >
+                    <h2 className="mb-2 text-sm font-semibold capitalize text-[#43524e]">
+                      {monthName(selectedYear, monthIndex, locale)}
+                    </h2>
+                    <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-medium text-[#82908c]">
+                      {weekDays.map((weekday) => (
+                        <span key={`${monthIndex}-${weekday}`}>{weekday}</span>
+                      ))}
+                    </div>
+                    <div className="mt-1 grid grid-cols-7 gap-1">
+                      {Array.from({ length: offset }).map((_, index) => (
+                        <span
+                          aria-hidden="true"
+                          className="aspect-square"
+                          key={`offset-${monthIndex}-${index}`}
+                        />
+                      ))}
+                      {Array.from({ length: days }, (_, dayIndex) => {
+                        const day = dayIndex + 1;
+                        const key = `${selectedYear}-${`${monthIndex + 1}`.padStart(2, "0")}-${`${day}`.padStart(2, "0")}`;
+                        const hasNote = Boolean(dayNotes[key]?.trim());
+                        const isSelected = selectedDate === key;
+
+                        return (
+                          <button
+                            className={`relative aspect-square rounded-md text-xs font-medium transition ${
+                              isSelected
+                                ? "bg-[#1e2a27] text-white"
+                                : hasNote
+                                  ? "bg-[#dcebe6] text-[#1e2a27] hover:bg-[#cfe2db]"
+                                  : "text-[#596965] hover:bg-[#e8f1ee] hover:text-[#26332f]"
+                            }`}
+                            key={key}
+                            onClick={() => setSelectedDate(key)}
+                            type="button"
+                          >
+                            {day}
+                            {hasNote && (
+                              <span
+                                className={`absolute bottom-1 left-1/2 size-1 -translate-x-1/2 rounded-full ${
+                                  isSelected ? "bg-white" : "bg-[#0f8a68]"
+                                }`}
+                              />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
         <div className="grid gap-5 lg:grid-cols-[1fr_1.05fr]">
           <section className="agenda-panel rounded-lg border border-[#d5e2de] bg-white/55 p-5">
             <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-[#43524e]">
               <FileText size={17} />
-              {scopes.find((scope) => scope.key === activeScope)?.label}
+              {activeScope === "yearly"
+                ? `${t.selectedDay}: ${formatAgendaDate(selectedDate, locale)}`
+                : scopes.find((scope) => scope.key === activeScope)?.label}
             </div>
             <textarea
               className="note-textarea min-h-[280px] w-full resize-none bg-transparent text-lg leading-8 outline-none placeholder:text-[#9eaca8]"
-              onChange={(event) => onUpdateNote(activeScope, event.target.value)}
+              onChange={(event) =>
+                activeScope === "yearly"
+                  ? onUpdateDayNote(selectedDate, event.target.value)
+                  : onUpdateNote(activeScope, event.target.value)
+              }
               placeholder={t.agendaNotePlaceholder[activeScope]}
-              value={activePlan.note}
+              value={activeScope === "yearly" ? selectedDayNote : activePlan.note}
             />
           </section>
 
@@ -1409,6 +1592,15 @@ function normalizeAgenda(value: unknown): AgendaState {
 }
 
 function normalizeAgendaPlan(plan?: Partial<AgendaPlan>): AgendaPlan {
+  const dayNotes =
+    plan?.dayNotes && typeof plan.dayNotes === "object"
+      ? Object.fromEntries(
+          Object.entries(plan.dayNotes).filter(
+            ([key, value]) => key && typeof value === "string",
+          ),
+        )
+      : {};
+
   return {
     note: typeof plan?.note === "string" ? plan.note : "",
     items: Array.isArray(plan?.items)
@@ -1421,6 +1613,7 @@ function normalizeAgendaPlan(plan?: Partial<AgendaPlan>): AgendaPlan {
           done: Boolean(item.done),
         }))
       : [],
+    dayNotes,
   };
 }
 
@@ -1821,6 +2014,16 @@ export default function Home() {
 
   function updateAgendaNote(scope: AgendaScope, note: string) {
     updateAgendaPlan(scope, (plan) => ({ ...plan, note }));
+  }
+
+  function updateAgendaDayNote(date: string, note: string) {
+    updateAgendaPlan("yearly", (plan) => ({
+      ...plan,
+      dayNotes: {
+        ...(plan.dayNotes ?? {}),
+        [date]: note,
+      },
+    }));
   }
 
   function addAgendaItem(scope: AgendaScope) {
@@ -2267,8 +2470,10 @@ export default function Home() {
         {activeView === "agenda" ? (
           <AgendaView
             agenda={agenda}
+            locale={locale}
             onAddItem={addAgendaItem}
             onDeleteItem={deleteAgendaItem}
+            onUpdateDayNote={updateAgendaDayNote}
             onToggleItem={toggleAgendaItem}
             onUpdateItem={updateAgendaItem}
             onUpdateNote={updateAgendaNote}
