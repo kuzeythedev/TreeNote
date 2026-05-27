@@ -88,6 +88,8 @@ type AgendaPlan = {
 
 type AgendaState = Record<AgendaScope, AgendaPlan>;
 
+const ADMIN_EMAIL = "kuzeyaydin7411@gmail.com";
+
 type Translation = {
   appSubtitle: string;
   newPage: string;
@@ -133,6 +135,7 @@ type Translation = {
   haveAccount: string;
   signOut: string;
   account: string;
+  adminRole: string;
   authConfigTitle: string;
   authConfigBody: string;
   authSuccess: string;
@@ -225,6 +228,7 @@ const translations: Record<Locale, Translation> = {
     haveAccount: "Zaten hesabın var mı?",
     signOut: "Çıkış yap",
     account: "Hesap",
+    adminRole: "Admin",
     authConfigTitle: "Supabase ayarı eksik",
     authConfigBody:
       ".env.local dosyasına NEXT_PUBLIC_SUPABASE_URL ve NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY değerlerini ekle.",
@@ -322,6 +326,7 @@ const translations: Record<Locale, Translation> = {
     haveAccount: "Already have an account?",
     signOut: "Sign out",
     account: "Account",
+    adminRole: "Admin",
     authConfigTitle: "Supabase config is missing",
     authConfigBody:
       "Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY to .env.local.",
@@ -1762,6 +1767,8 @@ export default function Home() {
   const storageReadyRef = useRef(false);
 
   const t = translations[locale];
+  const isAdmin =
+    session?.user.email?.toLocaleLowerCase("en-US") === ADMIN_EMAIL;
   const syncLabel =
     syncStatus === "saving"
       ? t.saving
@@ -2443,6 +2450,7 @@ export default function Home() {
                 <span className="mt-1 block text-xs text-[#687874]">
                   {locale === "tr" ? t.turkish : t.english} ·{" "}
                   {theme === "dark" ? t.darkTheme : t.lightTheme}
+                  {isAdmin ? ` · ${t.adminRole}` : ""}
                 </span>
               </span>
               <UserRound size={17} className="text-[#7b8b87]" />
@@ -2455,8 +2463,15 @@ export default function Home() {
                   {t.account}
                 </div>
                 <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-[#d5e2de] bg-[#fbfefd] p-2">
-                  <span className="min-w-0 truncate text-xs text-[#687874]">
-                    {session.user.email}
+                  <span className="min-w-0">
+                    <span className="block truncate text-xs text-[#687874]">
+                      {session.user.email}
+                    </span>
+                    {isAdmin && (
+                      <span className="mt-1 inline-flex rounded-full bg-[#e8f1ee] px-2 py-0.5 text-[11px] font-semibold text-[#0f6f55]">
+                        {t.adminRole}
+                      </span>
+                    )}
                   </span>
                   <button
                     aria-label={t.signOut}
