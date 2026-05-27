@@ -1180,7 +1180,7 @@ function AuthPanel({
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase) return;
+    if (!supabase || isSubmitting) return;
 
     const normalizedEmail = email.trim();
     if (!normalizedEmail) {
@@ -1353,6 +1353,8 @@ function AuthPanel({
           className="mt-4 text-sm font-medium text-[#596965] underline-offset-4 hover:underline"
           onClick={() => {
             setMessage("");
+            setPhone("");
+            setIsPasswordVisible(false);
             setMode((currentMode) =>
               currentMode === "sign-in" ? "sign-up" : "sign-in",
             );
