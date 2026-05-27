@@ -89,6 +89,8 @@ type AgendaPlan = {
 type AgendaState = Record<AgendaScope, AgendaPlan>;
 
 const ADMIN_EMAIL = "kuzeyaydin7411@gmail.com";
+const LOCAL_ADMIN_SESSION_TOKEN = "local-admin-session";
+const LOCAL_ADMIN_USER_ID = "00000000-0000-0000-0000-000000000001";
 
 type Translation = {
   appSubtitle: string;
@@ -1745,6 +1747,39 @@ function resizeTextarea(element: HTMLTextAreaElement) {
   element.classList.toggle("is-scrollable", shouldScroll);
 }
 
+function isLocalHost() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+}
+
+function createLocalAdminSession(): Session {
+  const now = Math.floor(Date.now() / 1000);
+
+  return {
+    access_token: LOCAL_ADMIN_SESSION_TOKEN,
+    expires_at: now + 60 * 60 * 24 * 365,
+    expires_in: 60 * 60 * 24 * 365,
+    refresh_token: LOCAL_ADMIN_SESSION_TOKEN,
+    token_type: "bearer",
+    user: {
+      app_metadata: {},
+      aud: "authenticated",
+      created_at: new Date().toISOString(),
+      email: ADMIN_EMAIL,
+      id: LOCAL_ADMIN_USER_ID,
+      role: "authenticated",
+      user_metadata: {},
+    },
+  };
+}
+
+function isLocalAdminSession(session: Session | null) {
+  return session?.access_token === LOCAL_ADMIN_SESSION_TOKEN;
+}
+
 export default function Home() {
   const supabase = useMemo(() => createClient(), []);
   const [pages, setPages] = useState<NotePage[]>(starterPages);
@@ -1769,10 +1804,13 @@ export default function Home() {
   const storageReadyRef = useRef(false);
 
   const t = translations[locale];
+  const isLocalSession = isLocalAdminSession(session);
   const isAdmin =
     session?.user.email?.toLocaleLowerCase("en-US") === ADMIN_EMAIL;
   const syncLabel =
-    syncStatus === "saving"
+    isLocalSession
+      ? t.localOnly
+      : syncStatus === "saving"
       ? t.saving
       : syncStatus === "error"
         ? t.syncError
@@ -1852,11 +1890,13 @@ export default function Home() {
       try {
         const { data } = await authClient.auth.getSession();
         if (isMounted) {
-          setSession(data.session);
+          setSession(
+            data.session ?? (isLocalHost() ? createLocalAdminSession() : null),
+          );
         }
       } catch {
         if (isMounted) {
-          setSession(null);
+          setSession(isLocalHost() ? createLocalAdminSession() : null);
           setSyncStatus("local");
         }
       } finally {
@@ -1873,8 +1913,10 @@ export default function Home() {
     } = authClient.auth.onAuthStateChange((_event, nextSession) => {
       remoteReadyRef.current = false;
       lastRemoteSnapshotRef.current = "";
-      setSession(nextSession);
-      setSyncStatus(nextSession ? "loading" : "local");
+      const localSession =
+        nextSession ?? (isLocalHost() ? createLocalAdminSession() : null);
+      setSession(localSession);
+      setSyncStatus(localSession && !isLocalAdminSession(localSession) ? "loading" : "local");
     });
 
     return () => {
@@ -1884,7 +1926,13 @@ export default function Home() {
   }, [supabase]);
 
   useEffect(() => {
-    if (!supabase || !session || !storageReadyRef.current || remoteReadyRef.current) {
+    if (
+      !supabase ||
+      !session ||
+      isLocalSession ||
+      !storageReadyRef.current ||
+      remoteReadyRef.current
+    ) {
       return;
     }
 
@@ -1947,7 +1995,7 @@ export default function Home() {
     return () => {
       isMounted = false;
     };
-  }, [agenda, locale, pages, session, supabase, theme]);
+  }, [agenda, isLocalSession, locale, pages, session, supabase, theme]);
 
   useEffect(() => {
     if (storageReadyRef.current) {
@@ -1959,7 +2007,7 @@ export default function Home() {
   }, [agenda, locale, pages, theme]);
 
   useEffect(() => {
-    if (!supabase || !session || !remoteReadyRef.current) {
+    if (!supabase || !session || isLocalSession || !remoteReadyRef.current) {
       return;
     }
 
@@ -1995,7 +2043,7 @@ export default function Home() {
         window.clearTimeout(saveTimerRef.current);
       }
     };
-  }, [agenda, locale, pages, session, supabase, theme]);
+  }, [agenda, isLocalSession, locale, pages, session, supabase, theme]);
 
   useEffect(() => {
     function closeMenusWithEscape(event: KeyboardEvent) {
